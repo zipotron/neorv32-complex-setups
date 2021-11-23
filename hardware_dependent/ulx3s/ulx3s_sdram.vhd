@@ -48,7 +48,7 @@ entity sdram is
     --
     -- This value must be provided, as it is used to calculate the number of
     -- clock cycles required for the other timing values.
-    clk_freq : natural := 100;
+    CLK_FREQ : real ;
 
     -- 32-bit controller interface
     ADDR_WIDTH : natural := 23;
@@ -72,7 +72,7 @@ entity sdram is
     --
     -- These values can be adjusted to match the exact timing of your SDRAM
     -- chip (refer to the datasheet).
-    T_DESL : real :=  50000.0; -- startup delay
+    T_DESL : real := 200000.0; -- startup delay
     T_MRD  : real :=     12.0; -- mode register cycle time
     T_RC   : real :=     60.0; -- row cycle time
     T_RCD  : real :=     18.0; -- RAS to CAS delay
@@ -92,6 +92,9 @@ entity sdram is
 
     -- input data bus
     data : in std_logic_vector(DATA_WIDTH-1 downto 0);
+    
+    -- input data mask
+    mask : in std_logic_vector(3 downto 0);
 
     -- When the write enable signal is asserted, a write operation will be performed.
     we : in std_logic;
@@ -160,7 +163,7 @@ architecture arch of sdram is
   );
 
   -- calculate the clock period (in nanoseconds)
-  constant CLK_PERIOD : real := (1.0/Real(clk_freq))*1000.0;
+  constant CLK_PERIOD : real := 1.0/CLK_FREQ*1000.0;
 
   -- the number of clock cycles to wait before initialising the device
   constant INIT_WAIT : natural := natural(ceil(T_DESL/CLK_PERIOD));
@@ -217,6 +220,7 @@ architecture arch of sdram is
   signal addr_reg : unsigned(SDRAM_COL_WIDTH+SDRAM_ROW_WIDTH+SDRAM_BANK_WIDTH-1 downto 0);
   signal data_reg : std_logic_vector(DATA_WIDTH-1 downto 0);
   signal we_reg   : std_logic;
+  signal mask_reg : std_logic_vector(3 downto 0);
   signal q_reg    : std_logic_vector(DATA_WIDTH-1 downto 0);
 
   -- aliases to decode the address register
@@ -368,6 +372,7 @@ begin
         addr_reg <= shift_left(resize(addr, addr_reg'length), 1);
         data_reg <= data;
         we_reg   <= we;
+        mask_reg <= not mask;
       end if;
     end if;
   end process;
@@ -443,6 +448,20 @@ begin
       data_reg(31 downto 16) when wait_counter = 0 else  -- first cycle of WRITE writes most significant 16 bits
       data_reg(15 downto 0);                             -- second cycle writes least significant 16 bits
   -- set SDRAM data mask
-  sdram_dqmh <= '0';
-  sdram_dqml <= '0';
+  process (state, wait_counter, mask_reg)
+  begin
+    if (state = WRITE) then
+      if (wait_counter = 0) then
+        sdram_dqmh <= mask_reg(3);
+        sdram_dqml <= mask_reg(2);
+      else
+        sdram_dqmh <= mask_reg(1);
+        sdram_dqml <= mask_reg(0);
+      end if;
+    else
+      sdram_dqmh <= '0';
+      sdram_dqml <= '0';
+    end if;
+  end process;
+
 end architecture arch;
