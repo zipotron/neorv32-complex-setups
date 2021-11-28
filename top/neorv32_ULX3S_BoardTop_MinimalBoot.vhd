@@ -58,7 +58,18 @@ entity neorv32_ULX3S_BoardTop_MinimalBoot is
     ULX3S_LED7  : out std_logic;
     -- UART0
     ULX3S_RX    : in  std_logic;
-    ULX3S_TX    : out std_logic
+    ULX3S_TX    : out std_logic;
+    -- SDRAM interface    
+    sdram_clk   : out   std_logic;                        -- Master Clock
+    sdram_cke   : out   std_logic;                        -- Clock Enable    
+    sdram_csn  : out   std_logic;                        -- Chip Select
+    sdram_rasn : out   std_logic;                        -- Row Address Strobe
+    sdram_casn : out   std_logic;                        -- Column Address Strobe
+    sdram_wen  : out   std_logic;                        -- Write Enable
+    sdram_d    : inout std_logic_vector(15 downto 0);    -- Data I/O (16 bits)
+    sdram_dqm  : out   std_logic_vector(1 downto 0);     -- Output Disable / Write Mask
+    sdram_a  : out   std_logic_vector(12 downto 0);    -- Address Input (12 bits)
+    sdram_ba  : out   std_logic_vector(1 downto 0)              -- Bank Address
   );
 end entity;
 
@@ -80,6 +91,71 @@ architecture neorv32_ULX3S_BoardTop_MinimalBoot_rtl of neorv32_ULX3S_BoardTop_Mi
     );
   end component ecp5pll;
    
+   --
+   -- Wishbone Intercon
+   --   
+   component wb_intercon is
+      port (  
+         -- Syscon
+         clk_i      : in  std_logic := '0';
+         rst_i      : in  std_logic := '0';
+      
+         -- Wishbone Master
+         wbm_stb_i  : in  std_logic := '0';
+         wbm_cyc_i  : in  std_logic := '0';
+         wbm_we_i   : in  std_logic := '0';
+         wbm_ack_o  : out std_logic;
+         wbm_adr_i  : in  std_logic_vector(31 downto 0) := (others => '0');
+         wbm_dat_i  : in  std_logic_vector(31 downto 0) := (others => '0');
+         wbm_dat_o  : out std_logic_vector(31 downto 0);
+         wbm_sel_i  : in  std_logic_vector(03 downto 0) := (others => '0');
+      
+         -- Wishbone Slave x
+         wbs_we_o   : out std_logic; 
+         wbs_dat_o  : out std_logic_vector(31 downto 0);  
+         wbs_sel_o  : out std_logic_vector(03 downto 0);  
+      
+         -- Wishbone Slave 1
+         wbs1_stb_o : out std_logic;
+         wbs1_ack_i : in  std_logic := '0';
+         wbs1_adr_o : out std_logic_vector(27 downto 0);  
+         wbs1_dat_i : in  std_logic_vector(31 downto 0) := (others => '0')
+      
+      );
+   end component wb_intercon;
+
+
+   --
+   -- Wishbone SDRAM Controller
+   --
+   component wb_sdram is
+      port (  
+         -- System
+         clk_i       : in  std_logic                      := '0';
+         rst_i       : in  std_logic                      := '0';
+
+         -- Wishbone
+         wbs_stb_i   : in  std_logic                      := '0';
+         wbs_we_i    : in  std_logic                      := '0';
+         wbs_sel_i   : in  std_logic_vector(03 downto 0)  := (others => '0');
+         wbs_adr_i   : in  std_logic_vector(27 downto 0)  := (others => '0');
+         wbs_dat_i   : in  std_logic_vector(31 downto 0)  := (others => '0');
+         wbs_dat_o   : out std_logic_vector(31 downto 0);  
+         wbs_ack_o   : out std_logic;
+      
+         -- SDRAM
+         sdram_addr  : out   std_logic_vector(12 downto 0);                    -- addr
+         sdram_ba    : out   std_logic_vector(1 downto 0);                     -- ba
+         sdram_cas_n : out   std_logic;                                        -- cas_n
+         sdram_cke   : out   std_logic;                                        -- cke
+         sdram_cs_n  : out   std_logic;                                        -- cs_n
+         sdram_dq    : inout std_logic_vector(15 downto 0) := (others => 'X'); -- dq
+         sdram_dqm   : out   std_logic_vector(1 downto 0);                     -- dqm
+         sdram_ras_n : out   std_logic;                                        -- ras_n
+         sdram_we_n  : out   std_logic                                         -- we_n
+      );
+   end component wb_sdram;
+
   -- configuration --
   constant f_clock_c : natural := 25000000; -- clock frequency in Hz
 
@@ -139,10 +215,10 @@ begin
       clk_o => clocks,
       locked => pll_locked
       );
-      --inclk0 => CLOCK_50,
-      --clocks(0)     <= sys_clk;
-      --clocks(1)     <= SDRAM_CLK;
-      
+  
+  sdram_clk <= clocks(3);
+  
+  
   -- The core of the problem ----------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   neorv32_inst: neorv32_top
@@ -211,6 +287,76 @@ begin
     -- PWM (available if IO_PWM_EN = true) --
     pwm_o       => con_pwm                       -- pwm channels
   );
+  
+  wb_sel_int       <= To_StdLogicVector( wb_soc.sel );
+  wb_adr_int       <= To_StdLogicVector( wb_soc.addr );
+  wb_soc.rdata    <= std_ulogic_vector( wb_dat_read );
+  wb_dat_write_int <= To_StdLogicVector( wb_soc.wdata );
+  
+   --
+   -- Wishbone Intercon
+   --   
+  inst_wb_intercon : wb_intercon
+      port map (  
+         -- System
+         clk_i      => std_ulogic(ULX3S_CLK),
+         rst_i      => std_ulogic(ULX3S_RST_N),
+      
+         -- Wishbone Master
+         wbm_stb_i  => wb_soc.stb,
+         wbm_cyc_i  => wb_soc.cyc,
+         wbm_we_i   => wb_soc.we,
+         wbm_ack_o  => wb_soc.ack,
+         wbm_adr_i  => wb_adr_int,
+         wbm_dat_i  => wb_dat_write_int,
+         wbm_dat_o  => wb_dat_read,
+         wbm_sel_i  => wb_sel_int,
+      
+         -- Wishbone Slave x
+         wbs_we_o   => wbs_we_i,
+         wbs_dat_o  => wbs_dat_i,
+         wbs_sel_o  => wbs_sel_i,
+      
+         -- Wishbone Slave 1
+         wbs1_stb_o => wbs1_stb_i,
+         wbs1_ack_i => wbs1_ack_o,
+         wbs1_adr_o => wbs1_adr_i,
+         wbs1_dat_i => wbs1_dat_o 
+      );
+
+
+   --
+   -- Wishbone SDRAM Controller
+   --
+  inst_wb_sdram: wb_sdram
+      port map (  
+         -- System
+         clk_i       => std_ulogic(ULX3S_CLK),
+         rst_i       => std_ulogic(ULX3S_RST_N),
+
+         -- Wishbone
+         wbs_stb_i   => wbs1_stb_i,
+         wbs_we_i    => wbs_we_i,
+         wbs_sel_i   => wbs_sel_i,
+         wbs_adr_i   => wbs1_adr_i,
+         wbs_dat_i   => wbs_dat_i,
+         wbs_dat_o   => wbs1_dat_o,
+         wbs_ack_o   => wbs1_ack_o,
+
+         -- SDRAM
+         sdram_addr  => sdram_a,
+         sdram_ba    => sdram_ba,
+         sdram_cas_n => sdram_casn,
+         sdram_cke   => sdram_cke,
+         sdram_cs_n  => sdram_csn,
+         sdram_dq    => sdram_d,
+         sdram_dqm   => sdram_dqm,
+         sdram_ras_n => sdram_rasn,
+         sdram_we_n  => sdram_wen
+      );
+   
+   --  sdram_ba <= sdram_ba;
+   --  sdram_dqm <= sdram_dqm;  
 
 
   -- IO Connection --------------------------------------------------------------------------
@@ -226,13 +372,5 @@ begin
 
   con_rxd_i <= std_ulogic(ULX3S_RX);
   ULX3S_TX  <= std_logic(con_txd_o);
-
-
-  -- Wishbone Subsystem ---------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  -- Add your design logic here!
-  wb_soc.rdata <= (others => '0');
-  wb_soc.ack   <= '0'; -- since there is no device here, any access via the wishbone bus will timeout
-
 
 end architecture;
