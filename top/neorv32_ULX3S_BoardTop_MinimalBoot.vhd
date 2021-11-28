@@ -4,6 +4,8 @@
 -- # BSD 3-Clause License                                                                          #
 -- #                                                                                               #
 -- # Copyright (c) 2021, Stephan Nolting. All rights reserved.                                     #
+-- # Copyright (c) 2021, by Carlos Dominguez (https://github.com/zipotron)                         #
+-- # Copyright (c) 2021, by Michael Fischer (www.emb4fun.de)                                       #
 -- #                                                                                               #
 -- # Redistribution and use in source and binary forms, with or without modification, are          #
 -- # permitted provided that the following conditions are met:                                     #
