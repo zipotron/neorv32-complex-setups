@@ -44,38 +44,81 @@ use ECP5.components.all; -- for device primitives and macros
 library neorv32;
 use neorv32.neorv32_package.all;
 
-entity neorv32_ULX3S_BoardTop_MinimalBoot is
-  port (
-    -- Clock and Reset inputs
-    ULX3S_CLK   : in  std_logic;
-    ULX3S_RST_N : in  std_logic;
-    -- LED outputs
-    ULX3S_LED0  : out std_logic;
-    ULX3S_LED1  : out std_logic;
-    ULX3S_LED2  : out std_logic;
-    ULX3S_LED3  : out std_logic;
-    ULX3S_LED4  : out std_logic;
-    ULX3S_LED5  : out std_logic;
-    ULX3S_LED6  : out std_logic;
-    ULX3S_LED7  : out std_logic;
-    -- UART0
-    ULX3S_RX    : in  std_logic;
-    ULX3S_TX    : out std_logic;
-    -- SDRAM interface    
-    sdram_clk   : out   std_logic;                        -- Master Clock
-    sdram_cke   : out   std_logic;                        -- Clock Enable    
-    sdram_csn  : out   std_logic;                        -- Chip Select
-    sdram_rasn : out   std_logic;                        -- Row Address Strobe
-    sdram_casn : out   std_logic;                        -- Column Address Strobe
-    sdram_wen  : out   std_logic;                        -- Write Enable
-    sdram_d    : inout std_logic_vector(15 downto 0);    -- Data I/O (16 bits)
-    sdram_dqm  : out   std_logic_vector(1 downto 0);     -- Output Disable / Write Mask
-    sdram_a  : out   std_logic_vector(12 downto 0);    -- Address Input (12 bits)
-    sdram_ba  : out   std_logic_vector(1 downto 0)              -- Bank Address
-  );
-end entity;
+--library ulx3s;
+--use ulx3s.ulx3s_package.all;
 
-architecture neorv32_ULX3S_BoardTop_MinimalBoot_rtl of neorv32_ULX3S_BoardTop_MinimalBoot is
+entity neorv32_ULX3S_BoardTop_MinimalBoot is
+   port ( 
+      --
+      -- Input clock 
+      --
+      ULX3S_CLK    : in  std_logic;
+
+      --
+      -- JTAG TAP
+      --
+      --nTRST_i     : in  std_logic;
+      --TCK_i       : in  std_logic;
+      --TDI_i       : in  std_logic; 
+      --TDO_o       : out std_logic;
+      --TMS_i       : in  std_logic;
+
+      --
+      -- SDRAM interface,
+      -- here a A3V64S40ETP-G6 (166MHz@CL-3) is used.
+      -- Reference is made to Zentel datasheet:
+      -- A3V64S40ETP, Revision 1.2, Mar., 2010
+      --        
+      SDRAM_CLK   : out   std_logic;                        -- Master Clock
+      SDRAM_CKE   : out   std_logic;                        -- Clock Enable    
+      SDRAM_CS_N  : out   std_logic;                        -- Chip Select
+      SDRAM_RAS_N : out   std_logic;                        -- Row Address Strobe
+      SDRAM_CAS_N : out   std_logic;                        -- Column Address Strobe
+      SDRAM_WE_N  : out   std_logic;                        -- Write Enable
+      SDRAM_DQ    : inout std_logic_vector(15 downto 0);    -- Data I/O (16 bits)
+      SDRAM_DQML  : out   std_logic;                        -- Output Disable / Write Mask (low)
+      SDRAM_DQMU  : out   std_logic;                        -- Output Disable / Write Mask (high)
+      SDRAM_ADDR  : out   std_logic_vector(12 downto 0);    -- Address Input (12 bits)
+      SDRAM_BA_0  : out   std_logic;                        -- Bank Address 0
+      SDRAM_BA_1  : out   std_logic;                        -- Bank Address 1
+      
+      --
+      -- User LEDs
+      --
+      LED         : out std_logic_vector(7 downto 0);
+      
+      --
+      -- Keys
+      --
+      KEY         : in  std_logic_vector(1 downto 0);
+      
+      --
+      -- UART      
+      --
+      UART0_TXD   : out std_logic;
+      UART0_RXD   : in  std_logic
+   );
+end entity neorv32_ULX3S_BoardTop_MinimalBoot;
+
+
+-- ****************************************************************************
+-- *  DEFINE: Architecture                                                    *
+-- ****************************************************************************
+
+architecture syn of neorv32_ULX3S_BoardTop_MinimalBoot is
+
+   --------------------------------------------------------
+   -- Define all constants here
+   --------------------------------------------------------
+
+   constant CLOCK_FREQUENCY   : natural := 100000000;    -- clock frequency of clk_i in Hz
+   constant MEM_INT_IMEM_SIZE : natural := 32*1024;      -- size of processor-internal instruction memory in bytes
+   constant MEM_INT_DMEM_SIZE : natural := 16*1024;      -- size of processor-internal data memory in bytes
+
+   
+   --------------------------------------------------------
+   -- Define all components which are included here
+   --------------------------------------------------------
 
   component ecp5pll
     generic (
@@ -92,96 +135,40 @@ architecture neorv32_ULX3S_BoardTop_MinimalBoot_rtl of neorv32_ULX3S_BoardTop_Mi
       locked : out   std_logic
     );
   end component ecp5pll;
+
+   --------------------------------------------------------
+   -- Define all local signals here
+   --------------------------------------------------------
+
+   signal sys_clk          : std_logic := '0';
+   signal pll_locked       : std_logic := '0';
+   signal reset            : std_logic := '0';
+   signal reset_s1         : std_logic := '1';
+   signal reset_s2         : std_logic := '1';
+   signal reset_s3         : std_logic := '1';
+   signal sys_rst          : std_logic;
+   signal fpga_reset       : std_logic;
+
+   signal clk_i            : std_logic;
+   signal rstn_i           : std_logic;
    
-   --
-   -- Wishbone Intercon
-   --   
-   component wb_intercon is
-      port (  
-         -- Syscon
-         clk_i      : in  std_logic := '0';
-         rst_i      : in  std_logic := '0';
-      
-         -- Wishbone Master
-         wbm_stb_i  : in  std_logic := '0';
-         wbm_cyc_i  : in  std_logic := '0';
-         wbm_we_i   : in  std_logic := '0';
-         wbm_ack_o  : out std_logic;
-         wbm_adr_i  : in  std_logic_vector(31 downto 0) := (others => '0');
-         wbm_dat_i  : in  std_logic_vector(31 downto 0) := (others => '0');
-         wbm_dat_o  : out std_logic_vector(31 downto 0);
-         wbm_sel_i  : in  std_logic_vector(03 downto 0) := (others => '0');
-      
-         -- Wishbone Slave x
-         wbs_we_o   : out std_logic; 
-         wbs_dat_o  : out std_logic_vector(31 downto 0);  
-         wbs_sel_o  : out std_logic_vector(03 downto 0);  
-      
-         -- Wishbone Slave 1
-         wbs1_stb_o : out std_logic;
-         wbs1_ack_i : in  std_logic := '0';
-         wbs1_adr_o : out std_logic_vector(27 downto 0);  
-         wbs1_dat_i : in  std_logic_vector(31 downto 0) := (others => '0')
-      
-      );
-   end component wb_intercon;
+   -- SDRAM
+   signal sdram_ba         : std_logic_vector(1 downto 0);
+   signal sdram_dqm        : std_logic_vector(1 downto 0);
 
+   signal gpio             : std_ulogic_vector(63 downto 0);
 
-   --
-   -- Wishbone SDRAM Controller
-   --
-   component wb_sdram is
-      port (  
-         -- System
-         clk_i       : in  std_logic                      := '0';
-         rst_i       : in  std_logic                      := '0';
+   -- Wishbone bus interface (available if MEM_EXT_EN = true) --
+   signal wb_adr           : std_ulogic_vector(31 downto 0);  -- address
+   signal wb_dat_read_u    : std_ulogic_vector(31 downto 0);  -- read data
+   signal wb_dat_write     : std_ulogic_vector(31 downto 0);  -- write data
+   signal wb_we            : std_ulogic;                      -- read/write
+   signal wb_sel           : std_ulogic_vector(03 downto 0);  -- byte enable
+   signal wb_stb           : std_ulogic;                      -- strobe
+   signal wb_cyc           : std_ulogic;                      
+   signal wb_ack           : std_ulogic;                      -- transfer acknowledge
 
-         -- Wishbone
-         wbs_stb_i   : in  std_logic                      := '0';
-         wbs_we_i    : in  std_logic                      := '0';
-         wbs_sel_i   : in  std_logic_vector(03 downto 0)  := (others => '0');
-         wbs_adr_i   : in  std_logic_vector(27 downto 0)  := (others => '0');
-         wbs_dat_i   : in  std_logic_vector(31 downto 0)  := (others => '0');
-         wbs_dat_o   : out std_logic_vector(31 downto 0);  
-         wbs_ack_o   : out std_logic;
-      
-         -- SDRAM
-         sdram_addr  : out   std_logic_vector(12 downto 0);                    -- addr
-         sdram_ba    : out   std_logic_vector(1 downto 0);                     -- ba
-         sdram_cas_n : out   std_logic;                                        -- cas_n
-         sdram_cke   : out   std_logic;                                        -- cke
-         sdram_cs_n  : out   std_logic;                                        -- cs_n
-         sdram_dq    : inout std_logic_vector(15 downto 0) := (others => 'X'); -- dq
-         sdram_dqm   : out   std_logic_vector(1 downto 0);                     -- dqm
-         sdram_ras_n : out   std_logic;                                        -- ras_n
-         sdram_we_n  : out   std_logic                                         -- we_n
-      );
-   end component wb_sdram;
-
-  -- configuration --
-  constant f_clock_c : natural := 25000000; -- clock frequency in Hz
-
-  -- internal IO connection --
-  signal con_pwm    : std_ulogic_vector(02 downto 0);
-  signal con_gpio_o : std_ulogic_vector(63 downto 0);
-  signal con_txd_o  : std_ulogic;
-  signal con_rxd_i  : std_ulogic;
-
-  -- wishbone bus --
-  type wishbone_t is record
-    addr  : std_ulogic_vector(31 downto 0); -- address
-    wdata : std_ulogic_vector(31 downto 0); -- host write data
-    rdata : std_ulogic_vector(31 downto 0); -- host read data
-    we    : std_ulogic;                     -- write enable
-    sel   : std_ulogic_vector(03 downto 0); -- byte enable
-    stb   : std_ulogic;                     -- strobe
-    cyc   : std_ulogic;                     -- valid cycle
-    ack   : std_ulogic;                     -- transfer acknowledge
-  end record;
---- UNCONNECTED
-  signal wb_soc : wishbone_t;
-
-  signal wb_sel_int       : std_logic_vector(03 downto 0);   -- byte enable
+	signal wb_sel_int       : std_logic_vector(03 downto 0);   -- byte enable
    signal wb_adr_int       : std_logic_vector(31 downto 0);   -- address
 	signal wb_dat_read      : std_logic_vector(31 downto 0);
    signal wb_dat_write_int : std_logic_vector(31 downto 0);   -- write data
@@ -194,15 +181,12 @@ architecture neorv32_ULX3S_BoardTop_MinimalBoot_rtl of neorv32_ULX3S_BoardTop_Mi
    signal wbs1_ack_o       : std_logic;
    signal wbs1_adr_i       : std_logic_vector(27 downto 0);
    signal wbs1_dat_o       : std_logic_vector(31 downto 0);
---- END UNCONNECTED
+   
+   signal clocks : std_logic_vector(3 downto 0);
 
-   signal pll_locked : std_logic;
-   signal clocks : std_logic_vector(03 downto 0);
-   
-   --signal sys_clk          : std_logic := '0';
-   --signal SDRAM_CLK          : std_logic := '0';
-   
+
 begin
+
   ecp5pll_inst : ecp5pll
     generic map (
       in_hz => 25*1000000,
@@ -217,98 +201,131 @@ begin
       clk_o => clocks,
       locked => pll_locked
       );
-  
-  sdram_clk <= clocks(3);
-  
-  
-  -- The core of the problem ----------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  neorv32_inst: neorv32_top
-  generic map (
-    -- General --
-    CLOCK_FREQUENCY              => f_clock_c,   -- clock frequency of clk_i in Hz
-    INT_BOOTLOADER_EN            => true,        -- boot configuration: true = boot explicit bootloader; false = boot from int/ext (I)MEM
+	sys_clk <= clocks(1);
+    SDRAM_CLK <= clocks(3);
+   --
+   -- In general it is a bad idea to use an asynchhronous Reset signal.
+   -- But it is only a bad idea in case of asynchhronous deasserting. 
+   -- Therefore the deasserting of the Reset signal must be synchronized.
+   --               
+                              
+   -- Asynchronous assert  
+   fpga_reset <= '1' when ((KEY(1) = '0') OR (KEY(0) = '0')) else '0';
+   reset      <= '1' when ((fpga_reset = '1') OR (pll_locked = '0')) else '0';
 
-    -- RISC-V CPU Extensions --
-    CPU_EXTENSION_RISCV_C        => true,        -- implement compressed extension?
-    CPU_EXTENSION_RISCV_M        => true,        -- implement mul/div extension?
-    CPU_EXTENSION_RISCV_Zicsr    => true,        -- implement CSR system?
+   -- Synchronize deassert
+   process (sys_clk, reset)
+   begin
+      if (reset = '1') then
+         reset_s1 <= '1';
+         reset_s2 <= '1';
+         reset_s3 <= '1';
+      elsif rising_edge(sys_clk) then
+         reset_s1 <= '0';
+         reset_s2 <= reset_s1;
+         reset_s3 <= reset_s2; 
+      end if;
+   end process;   
 
-    -- Extension Options --
-    FAST_MUL_EN                  => true,        -- use DSPs for M extension's multiplier
-    FAST_SHIFT_EN                => true,        -- use barrel shifter for shift operations
+   -- The deassert edge is now synchronized   
+   sys_rst <= reset_s3;
 
-    -- Internal Instruction memory --
-    MEM_INT_IMEM_EN              => true,        -- implement processor-internal instruction memory
-    MEM_INT_IMEM_SIZE            => 16*1024,     -- size of processor-internal instruction memory in bytes
+   clk_i  <= sys_clk;
+   rstn_i <= not sys_rst;
 
-    -- Internal Data memory --
-    MEM_INT_DMEM_EN              => true,        -- implement processor-internal data memory
-    MEM_INT_DMEM_SIZE            => 8*1024,      -- size of processor-internal data memory in bytes
 
-    -- External memory interface (WISHBONE) --
-    MEM_EXT_EN                   => true,        -- implement external memory bus interface?
-    MEM_EXT_TIMEOUT              => 255,         -- cycles after a pending bus access auto-terminates (0 = disabled)
-    MEM_EXT_PIPE_MODE            => false,       -- protocol: false=classic/standard wishbone mode, true=pipelined wishbone mode
+   --
+   -- neorv32
+   --
+   neorv32_top_inst: neorv32_top
+      generic map (
+         -- General --
+         CLOCK_FREQUENCY              => CLOCK_FREQUENCY,   -- clock frequency of clk_i in Hz
+         INT_BOOTLOADER_EN            => true,             -- boot configuration: true = boot explicit bootloader; false = boot from int/ext (I)MEM
 
-    -- Processor peripherals --
-    IO_GPIO_EN                   => true,        -- implement general purpose input/output port unit (GPIO)?
-    IO_MTIME_EN                  => true,        -- implement machine system timer (MTIME)?
-    IO_UART0_EN                  => true,        -- implement primary universal asynchronous receiver/transmitter (UART0)?
-    IO_PWM_NUM_CH                => 3,           -- number of PWM channels to implement (0..60); 0 = disabled
-    IO_WDT_EN                    => true         -- implement watch dog timer (WDT)?
-  )
-  port map (
-    -- Global control --
-    clk_i       => std_ulogic(ULX3S_CLK),        -- global clock, rising edge
-    rstn_i      => std_ulogic(ULX3S_RST_N),      -- global reset, low-active, async
+         -- On-Chip Debugger (OCD) --
+         ON_CHIP_DEBUGGER_EN          => true,              -- implement on-chip debugger
+         
+         -- RISC-V CPU Extensions --
+         CPU_EXTENSION_RISCV_A        => true,              -- implement atomic extension?
+         CPU_EXTENSION_RISCV_C        => true,              -- implement compressed extension?
+         CPU_EXTENSION_RISCV_M        => true,              -- implement mul/div extension?
+         CPU_EXTENSION_RISCV_Zicsr    => true,              -- implement CSR system?
+         CPU_EXTENSION_RISCV_Zifencei => true,              -- implement instruction stream sync.?
 
-    -- Wishbone bus interface (available if MEM_EXT_EN = true) --
-    wb_tag_o    => open,                         -- request tag
-    wb_adr_o    => wb_soc.addr,                  -- address
-    wb_dat_i    => wb_soc.rdata,                 -- read data
-    wb_dat_o    => wb_soc.wdata,                 -- write data
-    wb_we_o     => wb_soc.we,                    -- read/write
-    wb_sel_o    => wb_soc.sel,                   -- byte enable
-    wb_stb_o    => wb_soc.stb,                   -- strobe
-    wb_cyc_o    => wb_soc.cyc,                   -- valid cycle
-    wb_lock_o   => open,                         -- exclusive access request
-    wb_ack_i    => wb_soc.ack,                   -- transfer acknowledge
-    wb_err_i    => '0',                          -- transfer error
+         -- Internal Instruction memory --
+         MEM_INT_IMEM_EN              => true,              -- implement processor-internal instruction memory
+         MEM_INT_IMEM_SIZE            => MEM_INT_IMEM_SIZE, -- size of processor-internal instruction memory in bytes
+         
+         -- Internal Data memory --
+         MEM_INT_DMEM_EN              => true,              -- implement processor-internal data memory
+         MEM_INT_DMEM_SIZE            => MEM_INT_DMEM_SIZE, -- size of processor-internal data memory in bytes
 
-    -- GPIO (available if IO_GPIO_EN = true) --
-    gpio_o      => con_gpio_o,                   -- parallel output
-    gpio_i      => (others => '0'),              -- parallel input
+         -- External memory interface --
+         MEM_EXT_EN                   => true,              -- implement external memory bus interface?
+         MEM_EXT_TIMEOUT              => 255,               -- cycles after a pending bus access auto-terminates (0 = disabled)
+         MEM_EXT_PIPE_MODE            => false,             -- protocol: false=classic/standard wishbone mode, true=pipelined wishbone mode
+         MEM_EXT_BIG_ENDIAN           => false,             -- byte order: true=big-endian, false=little-endian
+         MEM_EXT_ASYNC_RX             => false,             -- use register buffer for RX data when false
+         
+         -- Processor peripherals --
+         IO_GPIO_EN                   => true,              -- implement general purpose input/output port unit (GPIO)?
+         IO_MTIME_EN                  => true,              -- implement machine system timer (MTIME)?
+         IO_UART0_EN                  => true               -- implement primary universal asynchronous receiver/transmitter (UART0)?
+      )
+      port map (
+         -- Global control --
+         clk_i         => clk_i,                            -- global clock, rising edge
+         rstn_i        => rstn_i,                           -- global reset, low-active, async
 
-    -- primary UART0 (available if IO_UART0_EN = true) --
-    uart0_txd_o => con_txd_o,                    -- UART0 send data
-    uart0_rxd_i => con_rxd_i,                    -- UART0 receive data
-    uart0_rts_o => open,                         -- hw flow control: UART0.RX ready to receive ("RTR"), low-active, optional
-    uart0_cts_i => '0',                          -- hw flow control: UART0.TX allowed to transmit, low-active, optional
+         -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
+         --jtag_trst_i   => nTRST_i,                          -- low-active TAP reset (optional)
+         --jtag_tck_i    => TCK_i,                            -- serial clock
+         --jtag_tdi_i    => TDI_i,                            -- serial data input
+         --jtag_tdo_o    => TDO_o,                            -- serial data output
+         --jtag_tms_i    => TMS_i,                            -- mode select
 
-    -- PWM (available if IO_PWM_EN = true) --
-    pwm_o       => con_pwm                       -- pwm channels
-  );
-  
-  wb_sel_int       <= To_StdLogicVector( wb_soc.sel );
-  wb_adr_int       <= To_StdLogicVector( wb_soc.addr );
-  wb_soc.rdata    <= std_ulogic_vector( wb_dat_read );
-  wb_dat_write_int <= To_StdLogicVector( wb_soc.wdata );
-  
+         -- Wishbone bus interface (available if MEM_EXT_EN = true) --
+         wb_tag_o      => open,                             -- tag
+         wb_adr_o      => wb_adr,                           -- address
+         wb_dat_i      => wb_dat_read_u,                    -- read data
+         wb_dat_o      => wb_dat_write,                     -- write data
+         wb_we_o       => wb_we,                            -- read/write
+         wb_sel_o      => wb_sel,                           -- byte enable
+         wb_stb_o      => wb_stb,                           -- strobe
+         wb_cyc_o      => wb_cyc,                           -- valid cycle
+         wb_lock_o     => open,                             -- exclusive access request
+         wb_ack_i      => wb_ack,                           -- transfer acknowledge
+         wb_err_i      => '0',                              -- transfer error
+         
+         -- GPIO (available if IO_GPIO_EN = true) --
+         gpio_o        => gpio,                             -- parallel output
+         
+         -- primary UART0 (available if IO_UART0_EN = true) --
+         uart0_txd_o   => UART0_TXD,                        -- UART0 send data
+         uart0_rxd_i   => UART0_RXD                         -- UART0 receive data
+      );
+
+	wb_sel_int       <= To_StdLogicVector( wb_sel );
+   wb_adr_int       <= To_StdLogicVector( wb_adr );
+	wb_dat_read_u    <= std_ulogic_vector( wb_dat_read );
+   wb_dat_write_int <= To_StdLogicVector( wb_dat_write );
+
+
    --
    -- Wishbone Intercon
    --   
-  inst_wb_intercon : wb_intercon
+   inst_wb_intercon : wb_intercon
       port map (  
-         -- System
-         clk_i      => std_ulogic(ULX3S_CLK),
-         rst_i      => std_ulogic(ULX3S_RST_N),
+         -- Syscon
+         clk_i      => sys_clk,
+         rst_i      => sys_rst,
       
          -- Wishbone Master
-         wbm_stb_i  => wb_soc.stb,
-         wbm_cyc_i  => wb_soc.cyc,
-         wbm_we_i   => wb_soc.we,
-         wbm_ack_o  => wb_soc.ack,
+         wbm_stb_i  => wb_stb,
+         wbm_cyc_i  => wb_cyc,
+         wbm_we_i   => wb_we,
+         wbm_ack_o  => wb_ack,
          wbm_adr_i  => wb_adr_int,
          wbm_dat_i  => wb_dat_write_int,
          wbm_dat_o  => wb_dat_read,
@@ -330,11 +347,11 @@ begin
    --
    -- Wishbone SDRAM Controller
    --
-  inst_wb_sdram: wb_sdram
+   inst_wb_sdram: wb_sdram
       port map (  
          -- System
-         clk_i       => std_ulogic(ULX3S_CLK),
-         rst_i       => std_ulogic(ULX3S_RST_N),
+         clk_i       => sys_clk,
+         rst_i       => sys_rst,
 
          -- Wishbone
          wbs_stb_i   => wbs1_stb_i,
@@ -346,33 +363,28 @@ begin
          wbs_ack_o   => wbs1_ack_o,
 
          -- SDRAM
-         sdram_addr  => sdram_a,
+         sdram_addr  => SDRAM_ADDR,
          sdram_ba    => sdram_ba,
-         sdram_cas_n => sdram_casn,
-         sdram_cke   => sdram_cke,
-         sdram_cs_n  => sdram_csn,
-         sdram_dq    => sdram_d,
+         sdram_cas_n => SDRAM_CAS_N,
+         sdram_cke   => SDRAM_CKE,
+         sdram_cs_n  => SDRAM_CS_N,
+         sdram_dq    => SDRAM_DQ,
          sdram_dqm   => sdram_dqm,
-         sdram_ras_n => sdram_rasn,
-         sdram_we_n  => sdram_wen
+         sdram_ras_n => SDRAM_RAS_N,
+         sdram_we_n  => SDRAM_WE_N
       );
+
+   SDRAM_BA_1 <= sdram_ba(1);
+   SDRAM_BA_0 <= sdram_ba(0);
    
-   --  sdram_ba <= sdram_ba;
-   --  sdram_dqm <= sdram_dqm;  
+   SDRAM_DQMU <= sdram_dqm(1);
+   SDRAM_DQML <= sdram_dqm(0);  
 
+   
+   --------------------------------------------------------
+   -- Output
+   --------------------------------------------------------
 
-  -- IO Connection --------------------------------------------------------------------------
-  -- -------------------------------------------------------------------------------------------
-  ULX3S_LED0 <= std_logic(con_gpio_o(0));
-  ULX3S_LED1 <= std_logic(con_gpio_o(1));
-  ULX3S_LED2 <= std_logic(con_gpio_o(2));
-  ULX3S_LED3 <= std_logic(con_gpio_o(3));
-  ULX3S_LED4 <= '0'; -- unused
-  ULX3S_LED5 <= std_logic(con_pwm(0));
-  ULX3S_LED6 <= std_logic(con_pwm(1));
-  ULX3S_LED7 <= std_logic(con_pwm(2));
+   LED <= To_StdLogicVector( gpio(7 downto 0) );
 
-  con_rxd_i <= std_ulogic(ULX3S_RX);
-  ULX3S_TX  <= std_logic(con_txd_o);
-
-end architecture;
+end architecture syn;
