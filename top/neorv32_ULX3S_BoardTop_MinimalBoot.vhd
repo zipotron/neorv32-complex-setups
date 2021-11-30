@@ -53,6 +53,7 @@ entity neorv32_ULX3S_BoardTop_MinimalBoot is
       -- Input clock 
       --
       ULX3S_CLK    : in  std_logic;
+      ULX3S_RST_N : in std_logic;
 
       --
       -- JTAG TAP
@@ -110,10 +111,10 @@ architecture syn of neorv32_ULX3S_BoardTop_MinimalBoot is
    --------------------------------------------------------
    -- Define all constants here
    --------------------------------------------------------
-
-   constant CLOCK_FREQUENCY   : natural := 100000000;    -- clock frequency of clk_i in Hz
-   constant MEM_INT_IMEM_SIZE : natural := 32*1024;      -- size of processor-internal instruction memory in bytes
-   constant MEM_INT_DMEM_SIZE : natural := 16*1024;      -- size of processor-internal data memory in bytes
+           --constant f_clock_c : natural := 25000000; -- clock frequency in Hz
+   constant CLOCK_FREQUENCY   : natural := 25000000;    -- clock frequency of clk_i in Hz
+   constant MEM_INT_IMEM_SIZE : natural := 16*1024;      -- size of processor-internal instruction memory in bytes
+   constant MEM_INT_DMEM_SIZE : natural := 8*1024;      -- size of processor-internal data memory in bytes
 
    
    --------------------------------------------------------
@@ -230,7 +231,7 @@ begin
    -- The deassert edge is now synchronized   
    sys_rst <= reset_s3;
 
-   clk_i  <= sys_clk;
+   --clk_i  <= sys_clk;
    rstn_i <= not sys_rst;
 
 
@@ -239,44 +240,43 @@ begin
    --
    neorv32_top_inst: neorv32_top
       generic map (
-         -- General --
-         CLOCK_FREQUENCY              => CLOCK_FREQUENCY,   -- clock frequency of clk_i in Hz
-         INT_BOOTLOADER_EN            => true,             -- boot configuration: true = boot explicit bootloader; false = boot from int/ext (I)MEM
 
-         -- On-Chip Debugger (OCD) --
-         ON_CHIP_DEBUGGER_EN          => true,              -- implement on-chip debugger
-         
-         -- RISC-V CPU Extensions --
-         CPU_EXTENSION_RISCV_A        => true,              -- implement atomic extension?
-         CPU_EXTENSION_RISCV_C        => true,              -- implement compressed extension?
-         CPU_EXTENSION_RISCV_M        => true,              -- implement mul/div extension?
-         CPU_EXTENSION_RISCV_Zicsr    => true,              -- implement CSR system?
-         CPU_EXTENSION_RISCV_Zifencei => true,              -- implement instruction stream sync.?
+         CLOCK_FREQUENCY   => CLOCK_FREQUENCY, -- clock frequency of clk_i in Hz
+        INT_BOOTLOADER_EN            => true,        -- boot configuration: true = boot explicit bootloader; false = boot from int/ext (I)MEM
 
-         -- Internal Instruction memory --
-         MEM_INT_IMEM_EN              => true,              -- implement processor-internal instruction memory
-         MEM_INT_IMEM_SIZE            => MEM_INT_IMEM_SIZE, -- size of processor-internal instruction memory in bytes
-         
-         -- Internal Data memory --
-         MEM_INT_DMEM_EN              => true,              -- implement processor-internal data memory
-         MEM_INT_DMEM_SIZE            => MEM_INT_DMEM_SIZE, -- size of processor-internal data memory in bytes
+    -- RISC-V CPU Extensions --
+    CPU_EXTENSION_RISCV_C        => true,        -- implement compressed extension?
+    CPU_EXTENSION_RISCV_M        => true,        -- implement mul/div extension?
+    CPU_EXTENSION_RISCV_Zicsr    => true,        -- implement CSR system?
 
-         -- External memory interface --
-         MEM_EXT_EN                   => true,              -- implement external memory bus interface?
-         MEM_EXT_TIMEOUT              => 255,               -- cycles after a pending bus access auto-terminates (0 = disabled)
-         MEM_EXT_PIPE_MODE            => false,             -- protocol: false=classic/standard wishbone mode, true=pipelined wishbone mode
-         MEM_EXT_BIG_ENDIAN           => false,             -- byte order: true=big-endian, false=little-endian
-         MEM_EXT_ASYNC_RX             => false,             -- use register buffer for RX data when false
-         
-         -- Processor peripherals --
-         IO_GPIO_EN                   => true,              -- implement general purpose input/output port unit (GPIO)?
-         IO_MTIME_EN                  => true,              -- implement machine system timer (MTIME)?
-         IO_UART0_EN                  => true               -- implement primary universal asynchronous receiver/transmitter (UART0)?
-      )
-      port map (
-         -- Global control --
-         clk_i         => clk_i,                            -- global clock, rising edge
-         rstn_i        => rstn_i,                           -- global reset, low-active, async
+    -- Extension Options --
+    FAST_MUL_EN                  => true,        -- use DSPs for M extension's multiplier
+    FAST_SHIFT_EN                => true,        -- use barrel shifter for shift operations
+
+    -- Internal Instruction memory --
+    MEM_INT_IMEM_EN              => true,        -- implement processor-internal instruction memory
+    MEM_INT_IMEM_SIZE            => 16*1024,     -- size of processor-internal instruction memory in bytes
+
+    -- Internal Data memory --
+    MEM_INT_DMEM_EN              => true,        -- implement processor-internal data memory
+    MEM_INT_DMEM_SIZE            => 8*1024,      -- size of processor-internal data memory in bytes
+
+    -- External memory interface (WISHBONE) --
+    MEM_EXT_EN                   => true,        -- implement external memory bus interface?
+    MEM_EXT_TIMEOUT              => 255,         -- cycles after a pending bus access auto-terminates (0 = disabled)
+    MEM_EXT_PIPE_MODE            => false,       -- protocol: false=classic/standard wishbone mode, true=pipelined wishbone mode
+
+    -- Processor peripherals --
+    IO_GPIO_EN                   => true,        -- implement general purpose input/output port unit (GPIO)?
+    IO_MTIME_EN                  => true,        -- implement machine system timer (MTIME)?
+    IO_UART0_EN                  => true,        -- implement primary universal asynchronous receiver/transmitter (UART0)?
+    IO_PWM_NUM_CH                => 3,           -- number of PWM channels to implement (0..60); 0 = disabled
+    IO_WDT_EN                    => true         -- implement watch dog timer (WDT)?
+  )
+  port map (
+    -- Global control --
+    clk_i      => std_ulogic(ULX3S_CLK),
+    rstn_i     => std_ulogic(ULX3S_RST_N),
 
          -- JTAG on-chip debugger interface (available if ON_CHIP_DEBUGGER_EN = true) --
          --jtag_trst_i   => nTRST_i,                          -- low-active TAP reset (optional)
@@ -299,7 +299,7 @@ begin
          wb_err_i      => '0',                              -- transfer error
          
          -- GPIO (available if IO_GPIO_EN = true) --
-         gpio_o        => gpio,                             -- parallel output
+         --gpio_o        => gpio,                             -- parallel output
          
          -- primary UART0 (available if IO_UART0_EN = true) --
          uart0_txd_o   => UART0_TXD,                        -- UART0 send data
