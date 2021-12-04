@@ -263,7 +263,7 @@ begin
 
     -- External memory interface (WISHBONE) --
     MEM_EXT_EN                   => true,        -- implement external memory bus interface?
-    MEM_EXT_TIMEOUT              => 255,         -- cycles after a pending bus access auto-terminates (0 = disabled)
+    MEM_EXT_TIMEOUT              => 8191,         -- cycles after a pending bus access auto-terminates (0 = disabled)
     MEM_EXT_PIPE_MODE            => false,       -- protocol: false=classic/standard wishbone mode, true=pipelined wishbone mode
 
     -- Processor peripherals --

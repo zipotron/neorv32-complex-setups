@@ -37,69 +37,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 package neorv32_package is
-   -- Wishbone Intercon
-   --   
-   component wb_intercon is
-      port (  
-         -- Syscon
-         clk_i      : in  std_logic := '0';
-         rst_i      : in  std_logic := '0';
-      
-         -- Wishbone Master
-         wbm_stb_i  : in  std_logic := '0';
-         wbm_cyc_i  : in  std_logic := '0';
-         wbm_we_i   : in  std_logic := '0';
-         wbm_ack_o  : out std_logic;
-         wbm_adr_i  : in  std_logic_vector(31 downto 0) := (others => '0');
-         wbm_dat_i  : in  std_logic_vector(31 downto 0) := (others => '0');
-         wbm_dat_o  : out std_logic_vector(31 downto 0);
-         wbm_sel_i  : in  std_logic_vector(03 downto 0) := (others => '0');
-      
-         -- Wishbone Slave x
-         wbs_we_o   : out std_logic; 
-         wbs_dat_o  : out std_logic_vector(31 downto 0);  
-         wbs_sel_o  : out std_logic_vector(03 downto 0);  
-      
-         -- Wishbone Slave 1
-         wbs1_stb_o : out std_logic;
-         wbs1_ack_i : in  std_logic := '0';
-         wbs1_adr_o : out std_logic_vector(27 downto 0);  
-         wbs1_dat_i : in  std_logic_vector(31 downto 0) := (others => '0')
-      
-      );
-   end component wb_intercon;
 
-
-   --
-   -- Wishbone SDRAM Controller
-   --
-   component wb_sdram is
-      port (  
-         -- System
-         clk_i       : in  std_logic                      := '0';
-         rst_i       : in  std_logic                      := '0';
-
-         -- Wishbone
-         wbs_stb_i   : in  std_logic                      := '0';
-         wbs_we_i    : in  std_logic                      := '0';
-         wbs_sel_i   : in  std_logic_vector(03 downto 0)  := (others => '0');
-         wbs_adr_i   : in  std_logic_vector(27 downto 0)  := (others => '0');
-         wbs_dat_i   : in  std_logic_vector(31 downto 0)  := (others => '0');
-         wbs_dat_o   : out std_logic_vector(31 downto 0);  
-         wbs_ack_o   : out std_logic;
-      
-         -- SDRAM
-         sdram_addr  : out   std_logic_vector(12 downto 0);                    -- addr
-         sdram_ba    : out   std_logic_vector(1 downto 0);                     -- ba
-         sdram_cas_n : out   std_logic;                                        -- cas_n
-         sdram_cke   : out   std_logic;                                        -- cke
-         sdram_cs_n  : out   std_logic;                                        -- cs_n
-         sdram_dq    : inout std_logic_vector(15 downto 0) := (others => 'X'); -- dq
-         sdram_dqm   : out   std_logic_vector(1 downto 0);                     -- dqm
-         sdram_ras_n : out   std_logic;                                        -- ras_n
-         sdram_we_n  : out   std_logic                                         -- we_n
-      );
-   end component wb_sdram;
   -- Architecture Configuration -------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   -- address space --
@@ -126,8 +64,22 @@ package neorv32_package is
   -- Architecture Constants (do not modify!) ------------------------------------------------
   -- -------------------------------------------------------------------------------------------
   constant data_width_c : natural := 32; -- native data path width - do not change!
-  constant hw_version_c : std_ulogic_vector(31 downto 0) := x"01060401"; -- no touchy!
+  constant hw_version_c : std_ulogic_vector(31 downto 0) := x"01060405"; -- no touchy!
   constant archid_c     : natural := 19; -- official NEORV32 architecture ID - hands off!
+
+  -- Check if we're inside the Matrix -------------------------------------------------------
+  -- -------------------------------------------------------------------------------------------
+  constant is_simulation_c : boolean := false -- seems like we're on real hardware
+-- pragma translate_off
+-- synthesis translate_off
+-- synthesis synthesis_off
+-- RTL_SYNTHESIS OFF
+  or true -- this MIGHT be a simulation
+-- RTL_SYNTHESIS ON
+-- synthesis synthesis_on
+-- synthesis translate_on
+-- pragma translate_on
+  ;
 
   -- External Interface Types ---------------------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -957,7 +909,70 @@ package neorv32_package is
   constant clk_div2048_c : natural := 6;
   constant clk_div4096_c : natural := 7;
 
+   --
+   -- Wishbone Intercon
+   --   
+   component wb_intercon is
+      port (  
+         -- Syscon
+         clk_i      : in  std_logic := '0';
+         rst_i      : in  std_logic := '0';
+      
+         -- Wishbone Master
+         wbm_stb_i  : in  std_logic := '0';
+         wbm_cyc_i  : in  std_logic := '0';
+         wbm_we_i   : in  std_logic := '0';
+         wbm_ack_o  : out std_logic;
+         wbm_adr_i  : in  std_logic_vector(31 downto 0) := (others => '0');
+         wbm_dat_i  : in  std_logic_vector(31 downto 0) := (others => '0');
+         wbm_dat_o  : out std_logic_vector(31 downto 0);
+         wbm_sel_i  : in  std_logic_vector(03 downto 0) := (others => '0');
+      
+         -- Wishbone Slave x
+         wbs_we_o   : out std_logic; 
+         wbs_dat_o  : out std_logic_vector(31 downto 0);  
+         wbs_sel_o  : out std_logic_vector(03 downto 0);  
+      
+         -- Wishbone Slave 1
+         wbs1_stb_o : out std_logic;
+         wbs1_ack_i : in  std_logic := '0';
+         wbs1_adr_o : out std_logic_vector(27 downto 0);  
+         wbs1_dat_i : in  std_logic_vector(31 downto 0) := (others => '0')
+      
+      );
+   end component wb_intercon;
 
+
+   --
+   -- Wishbone SDRAM Controller
+   --
+   component wb_sdram is
+      port (  
+         -- System
+         clk_i       : in  std_logic                      := '0';
+         rst_i       : in  std_logic                      := '0';
+
+         -- Wishbone
+         wbs_stb_i   : in  std_logic                      := '0';
+         wbs_we_i    : in  std_logic                      := '0';
+         wbs_sel_i   : in  std_logic_vector(03 downto 0)  := (others => '0');
+         wbs_adr_i   : in  std_logic_vector(27 downto 0)  := (others => '0');
+         wbs_dat_i   : in  std_logic_vector(31 downto 0)  := (others => '0');
+         wbs_dat_o   : out std_logic_vector(31 downto 0);  
+         wbs_ack_o   : out std_logic;
+      
+         -- SDRAM
+         sdram_addr  : out   std_logic_vector(12 downto 0);                    -- addr
+         sdram_ba    : out   std_logic_vector(1 downto 0);                     -- ba
+         sdram_cas_n : out   std_logic;                                        -- cas_n
+         sdram_cke   : out   std_logic;                                        -- cke
+         sdram_cs_n  : out   std_logic;                                        -- cs_n
+         sdram_dq    : inout std_logic_vector(15 downto 0) := (others => 'X'); -- dq
+         sdram_dqm   : out   std_logic_vector(1 downto 0);                     -- dqm
+         sdram_ras_n : out   std_logic;                                        -- ras_n
+         sdram_we_n  : out   std_logic                                         -- we_n
+      );
+   end component wb_sdram;
    
   -- Component: NEORV32 Processor Top Entity ------------------------------------------------
   -- -------------------------------------------------------------------------------------------
@@ -2154,7 +2169,7 @@ end neorv32_package;
 
 package body neorv32_package is
 
-  -- Function: Minimal required number of bits to represent input number --------------------
+  -- Function: Minimal required number of bits to represent <input> numbers -----------------
   -- -------------------------------------------------------------------------------------------
   function index_size_f(input : natural) return natural is
   begin
